@@ -4,6 +4,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from database import get_active_matches, get_team_elo
 from model import calculate_win_probability
+from evaluator import evaluate_market_value
 
 # Enable logging to track errors in your terminal
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -15,7 +16,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if TELEGRAM_CHAT_ID and str(user_id) != str(TELEGRAM_CHAT_ID):
         logger.warning(f"Unauthorized access attempt from user ID: {user_id}")
         return
-    await update.message.reply_text("🤖 Sports Analytics & Betting Pipeline Active. Use /status to check upcoming matches.")
+    await update.message.reply_text("🤖 Sports Analytics & Betting Pipeline Active. Use /status or /value.")
 
 # Command: /status (Fetches real upcoming matches from Neon)
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -47,12 +48,28 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     await update.message.reply_text(response_text, parse_mode="Markdown")
 
+# Command: /value (Scans for value betting edges)
+async def value_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if TELEGRAM_CHAT_ID and str(user_id) != str(TELEGRAM_CHAT_ID):
+        return
+    
+    alerts = evaluate_market_value()
+    
+    if not alerts:
+        await update.message.reply_text("🔍 **Value Scan Results:**\nNo betting edges currently exceeding the threshold.")
+        return
+    
+    for alert in alerts:
+        await update.message.reply_text(alert, parse_mode="Markdown")
+
 def main():
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
     # Register handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("status", status_command))
+    app.add_handler(CommandHandler("value", value_command))
 
     logger.info("Bot is starting polling...")
     app.run_polling()
