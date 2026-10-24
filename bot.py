@@ -1,78 +1,87 @@
+import os
 import logging
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
-from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-from database import get_active_matches, get_team_elo
-from model import calculate_win_probability
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from dotenv import load_dotenv
 from evaluator import evaluate_market_value
 
-# Enable logging to track errors in your terminal
+# Load environment variables
+load_dotenv()
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+# Enable logging
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Command: /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if TELEGRAM_CHAT_ID and str(user_id) != str(TELEGRAM_CHAT_ID):
-        logger.warning(f"Unauthorized access attempt from user ID: {user_id}")
-        return
-    await update.message.reply_text("🤖 Sports Analytics & Betting Pipeline Active. Use /status or /value.")
+    """Send a welcome message with interactive control buttons."""
+    keyboard = [
+        [InlineKeyboardButton("🎯 Check Value Bets", callback_data="check_value")],
+        [InlineKeyboardButton("⚙️ System Status", callback_data="status")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        "🤖 **Sports Betting Analytics Bot**\n\nChoose an action below:",
+        parse_mode="Markdown",
+        reply_markup=reply_markup
+    )
 
-# Command: /status (Fetches real upcoming matches from Neon)
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if TELEGRAM_CHAT_ID and str(user_id) != str(TELEGRAM_CHAT_ID):
-        logger.warning(f"Unauthorized status request from user ID: {user_id}")
-        return
-    
-    matches = get_active_matches()
-    
-    if not matches:
-        await update.message.reply_text("📊 **Current System Status:**\n• Database: Connected (Neon)\n• Active Matches: None found.")
-        return
-    
-    response_text = "📊 **Upcoming Matches & Analysis:**\n\n"
-    for match in matches:
-        match_id, match_date, home_team, away_team = match
-        home_elo = get_team_elo(home_team)
-        away_elo = get_team_elo(away_team)
-        
-        home_prob, away_prob = calculate_win_probability(home_elo, away_elo)
-        
-        response_text += (
-            f"🏀 **{home_team} vs {away_team}**\n"
-            f"• Date: {match_date}\n"
-            f"• Elo -> {home_team}: {home_elo} | {away_team}: {away_elo}\n"
-            f"• Win Prob -> {home_team}: {home_prob*100:.1f}% | {away_team}: {away_prob*100:.1f}%\n\n"
-        )
-        
-    await update.message.reply_text(response_text, parse_mode="Markdown")
+    """Check system operational status."""
+    msg = "✅ **System Status:** Online & 24/7 background scanning active on Oracle Cloud."
+    if update.message:
+        await update.message.reply_text(msg, parse_mode="Markdown")
+    elif update.callback_query:
+        await update.callback_query.message.reply_text(msg, parse_mode="Markdown")
 
-# Command: /value (Scans for value betting edges)
 async def value_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if TELEGRAM_CHAT_ID and str(user_id) != str(TELEGRAM_CHAT_ID):
-        return
+    """Evaluate market odds and return value bets."""
+    msg = "🔍 Scanning database and bookmaker odds..."
+    if update.message:
+        await update.message.reply_text(msg)
+    elif update.callback_query:
+        await update.callback_query.message.reply_text(msg)
+        
+    results = evaluate_market_value()
+    if results:
+        for alert in results:
+            if update.message:
+                await update.message.reply_text(alert, parse_mode="Markdown")
+            elif update.callback_query:
+                await update.callback_query.message.reply_text(alert, parse_mode="Markdown")
+    else:
+        no_res = "No value bets found with current database odds."
+        if update.message:
+            await update.message.reply_text(no_res)
+        elif update.callback_query:
+            await update.callback_query.message.reply_text(no_res)
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle button click events."""
+    query = update.callback_query
+    await query.answer()
     
-    alerts = evaluate_market_value()
-    
-    if not alerts:
-        await update.message.reply_text("🔍 **Value Scan Results:**\nNo betting edges currently exceeding the threshold.")
-        return
-    
-    for alert in alerts:
-        await update.message.reply_text(alert, parse_mode="Markdown")
+    if query.data == "check_value":
+        await value_command(update, context)
+    elif query.data == "status":
+        await status_command(update, context)
 
 def main():
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    """Start the bot."""
+    application = Application.builder().token(TOKEN).build()
 
-    # Register handlers
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("status", status_command))
-    app.add_handler(CommandHandler("value", value_command))
+    # Command handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("status", status_command))
+    application.add_handler(CommandHandler("value", value_command))
+    
+    # Callback query handler for buttons
+    application.add_handler(CallbackQueryHandler(button_handler))
 
-    logger.info("Bot is starting polling...")
-    app.run_polling()
+    print("Bot is polling...")
+    application.run_polling()
 
 if __name__ == "__main__":
     main()

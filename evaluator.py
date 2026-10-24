@@ -60,3 +60,7 @@ if __name__ == "__main__":
             print(alert)
     else:
         print("No value bets found with current database odds.")
+
+
+
+    
