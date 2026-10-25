@@ -47,7 +47,7 @@ def evaluate_market_value():
             
             ev = (float(true_prob) * float(odds)) - 1.0
             
-            if ev > 0.03:  # 3% Edge Threshold
+            if ev > 0.00:  # Set to 0.00 to force-trigger test signals
                 stake = calculate_kelly_stake(float(odds), float(true_prob))
                 edge_pct = round(ev * 100, 2)
                 
