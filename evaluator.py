@@ -19,27 +19,8 @@ def calculate_kelly_stake(decimal_odds, true_probability, bankroll=10000, fracti
     recommended_stake = bankroll * kelly_fraction * fraction
     return round(recommended_stake, 2)
 
-def scan_arbitrage_opportunities(odds_list):
-    """Scans multi-bookmaker odds for guaranteed arbitrage margins."""
-    if not odds_list:
-        return {"is_arbitrage": False}
-        
-    best_selection = max(odds_list, key=lambda x: x["odds"])
-    implied_sum = sum(1.0 / item["odds"] for item in odds_list)
-    
-    if implied_sum < 1.0:
-        profit_margin = (1.0 - implied_sum) * 100
-        return {
-            "is_arbitrage": True,
-            "margin": round(profit_margin, 2),
-            "best_book": best_selection["bookmaker"],
-            "best_odds": best_selection["odds"]
-        }
-        
-    return {"is_arbitrage": False}
-
 def evaluate_market_value():
-    """Fetches matches from PostgreSQL, evaluates odds, and formats 1xBet signals."""
+    """Fetches matches via JOINs from PostgreSQL, evaluates odds, and formats 1xBet signals."""
     signals = []
     
     if not DATABASE_URL:
@@ -50,20 +31,24 @@ def evaluate_market_value():
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
         
+        # Query matches joined with teams for home and away names
         cur.execute("""
-            SELECT id, home_team, away_team, league, market, selection, odds, model_probability 
-            FROM matches 
-            WHERE status = 'upcoming';
+            SELECT m.match_id, th.name AS home_team, ta.name AS away_team, 
+                   m.league, m.market, m.selection, m.odds, m.model_probability 
+            FROM matches m
+            JOIN teams th ON m.home_team_id = th.team_id
+            JOIN teams ta ON m.away_team_id = ta.team_id
+            WHERE LOWER(m.status) = 'upcoming';
         """)
         rows = cur.fetchall()
         
         for row in rows:
             match_id, home, away, league, market, selection, odds, true_prob = row
             
-            ev = (true_prob * odds) - 1.0
+            ev = (float(true_prob) * float(odds)) - 1.0
             
             if ev > 0.03:  # 3% Edge Threshold
-                stake = calculate_kelly_stake(odds, true_prob)
+                stake = calculate_kelly_stake(float(odds), float(true_prob))
                 edge_pct = round(ev * 100, 2)
                 
                 signal_card = (
@@ -75,7 +60,7 @@ def evaluate_market_value():
                     f"📌 𝗦election: {selection}\n\n"
                     f"💰 𝟭xBet Execution Parameters:\n"
                     f"• Target Odds (1xBet): {odds}\n"
-                    f"• Model Probability: {round(true_prob * 100, 1)}%\n"
+                    f"• Model Probability: {round(float(true_prob) * 100, 1)}%\n"
                     f"• Expected Value (EV): +{edge_pct}%\n"
                     f"• Suggested Stake: ${stake} (Quarter Kelly)\n"
                     f"──────────────────────────\n"

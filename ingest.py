@@ -7,27 +7,7 @@ from model import calculate_match_probabilities
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-def strip_vig_and_compare(sharp_home_odds, sharp_away_odds, soft_target_odds):
-    """Removes bookmaker juice from sharp baseline odds to find true probability, 
-       then compares against target soft book odds."""
-    if sharp_home_odds <= 1.0 or sharp_away_odds <= 1.0 or soft_target_odds <= 1.0:
-        return 0.0, 0.0
-        
-    implied_home = 1.0 / sharp_home_odds
-    implied_away = 1.0 / sharp_away_odds
-    
-    total_overround = implied_home + implied_away
-    true_home_prob = implied_home / total_overround
-    
-    ev = (true_home_prob * soft_target_odds) - 1.0
-    return round(true_home_prob, 4), round(ev * 100, 2)
-
 def ingest_sample_match():
-    """
-    Ingests sample fixtures with sharp vs retail odds comparison,
-    calculates model probabilities using the Poisson model, 
-    and saves them to PostgreSQL in the format required by evaluator.py.
-    """
     if not DATABASE_URL:
         print("DATABASE_URL not found in environment variables.")
         return
@@ -36,37 +16,47 @@ def ingest_sample_match():
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
         
-        # Example incoming fixture data
-        match_data = {
-            "home_team": "Golden State Warriors",
-            "away_team": "Phoenix Suns",
-            "league": "NBA",
-            "market": "1X2",
-            "selection": "Golden State Warriors Win",
-            "soft_odds": 2.15,
-            "sharp_home_odds": 2.02,
-            "sharp_away_odds": 1.85,
-            "home_lambda": 1.65, 
-            "away_lambda": 1.40
-        }
+        # 1. Ensure teams exist and get their IDs
+        teams = [
+            ("Golden State Warriors", "Basketball", "USA", 1560.0),
+            ("Phoenix Suns", "Basketball", "USA", 1540.0)
+        ]
         
-        # Calculate model probability using the Poisson model from model.py
-        probs = calculate_match_probabilities(match_data["home_lambda"], match_data["away_lambda"])
+        team_ids = {}
+        for name, sport, country, elo in teams:
+            cur.execute("""
+                INSERT INTO teams (name, sport, country, elo_rating) 
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (name) DO UPDATE SET elo_rating = EXCLUDED.elo_rating
+                RETURNING team_id, name;
+            """, (name, sport, country, elo))
+            row = cur.fetchone()
+            team_ids[row[1]] = row[0]
+
+        # 2. Ensure matches table has required betting parameters
+        cur.execute("""
+            ALTER TABLE matches ADD COLUMN IF NOT EXISTS league VARCHAR(100);
+            ALTER TABLE matches ADD COLUMN IF NOT EXISTS market VARCHAR(50);
+            ALTER TABLE matches ADD COLUMN IF NOT EXISTS selection VARCHAR(100);
+            ALTER TABLE matches ADD COLUMN IF NOT EXISTS odds NUMERIC(10,2);
+            ALTER TABLE matches ADD COLUMN IF NOT EXISTS model_probability NUMERIC(5,4);
+        """)
+
+        home_id = team_ids["Golden State Warriors"]
+        away_id = team_ids["Phoenix Suns"]
+        
+        # Calculate model probability using Poisson model
+        probs = calculate_match_probabilities(1.65, 1.40)
         model_prob = probs["home_win"]
         
-        # Insert fixture matching the active database schema
+        # 3. Insert upcoming match
         cur.execute("""
-            INSERT INTO matches (home_team, away_team, league, market, selection, odds, model_probability, status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, 'upcoming')
-            RETURNING id;
+            INSERT INTO matches (sport, match_date, home_team_id, away_team_id, league, market, selection, odds, model_probability, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'upcoming')
+            RETURNING match_id;
         """, (
-            match_data["home_team"],
-            match_data["away_team"],
-            match_data["league"],
-            match_data["market"],
-            match_data["selection"],
-            match_data["soft_odds"],
-            model_prob
+            'Basketball', datetime.now(), home_id, away_id, 
+            'NBA', '1X2', 'Golden State Warriors Win', 2.15, model_prob
         ))
         
         match_id = cur.fetchone()[0]
