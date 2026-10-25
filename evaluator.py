@@ -19,8 +19,27 @@ def calculate_kelly_stake(decimal_odds, true_probability, bankroll=10000, fracti
     recommended_stake = bankroll * kelly_fraction * fraction
     return round(recommended_stake, 2)
 
+def scan_arbitrage_opportunities(odds_list):
+    """Scans multi-bookmaker odds for guaranteed arbitrage margins."""
+    if not odds_list:
+        return {"is_arbitrage": False}
+        
+    best_selection = max(odds_list, key=lambda x: x["odds"])
+    implied_sum = sum(1.0 / item["odds"] for item in odds_list)
+    
+    if implied_sum < 1.0:
+        profit_margin = (1.0 - implied_sum) * 100
+        return {
+            "is_arbitrage": True,
+            "margin": round(profit_margin, 2),
+            "best_book": best_selection["bookmaker"],
+            "best_odds": best_selection["odds"]
+        }
+        
+    return {"is_arbitrage": False}
+
 def evaluate_market_value():
-    """Fetches matches from PostgreSQL, evaluates odds against model probabilities, and formats 1xBet signals."""
+    """Fetches matches from PostgreSQL, evaluates odds, and formats 1xBet signals."""
     signals = []
     
     if not DATABASE_URL:
@@ -31,22 +50,19 @@ def evaluate_market_value():
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
         
-        # Query active matches from your Neon PostgreSQL database
         cur.execute("""
-            SELECT home_team, away_team, league, market, selection, odds, model_probability 
+            SELECT id, home_team, away_team, league, market, selection, odds, model_probability 
             FROM matches 
             WHERE status = 'upcoming';
         """)
         rows = cur.fetchall()
         
         for row in rows:
-            home, away, league, market, selection, odds, true_prob = row
+            match_id, home, away, league, market, selection, odds, true_prob = row
             
-            # Calculate Expected Value (EV)
             ev = (true_prob * odds) - 1.0
             
-            # Filter for value bets exceeding a 3% edge threshold
-            if ev > 0.03:
+            if ev > 0.03:  # 3% Edge Threshold
                 stake = calculate_kelly_stake(odds, true_prob)
                 edge_pct = round(ev * 100, 2)
                 
@@ -65,7 +81,10 @@ def evaluate_market_value():
                     f"──────────────────────────\n"
                     f"⚡ Action: Open 1xBet & Place Order"
                 )
-                signals.append(signal_card)
+                signals.append({
+                    "id": match_id,
+                    "card": signal_card
+                })
                 
         cur.close()
         conn.close()

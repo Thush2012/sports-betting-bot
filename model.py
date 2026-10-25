@@ -1,34 +1,34 @@
 import math
+import numpy as np
 
-def calculate_win_probability(home_elo, away_elo, home_advantage=50):
-    """
-    Calculates expected win probabilities for Home and Away teams using Elo.
-    Home advantage is typically added to the home team's rating (e.g., +50 points).
-    """
-    adjusted_home_elo = home_elo + home_advantage
-    diff = adjusted_home_elo - away_elo
-    
-    # Standard Elo probability formula
-    home_prob = 1 / (1 + math.pow(10, -diff / 400))
-    away_prob = 1 - home_prob
-    
-    return home_prob, away_prob
+def poisson_probability(lmbda, k):
+    """Calculates Poisson probability for k goals given expected lambda."""
+    return (math.exp(-lmbda) * (lmbda ** k)) / math.factorial(k)
 
-def find_value_bets(home_prob, away_prob, home_odds, away_odds, min_edge=0.03):
-    """
-    Compares model probability against bookmaker implied probability.
-    Edge = Model Probability - Implied Probability.
-    """
-    implied_home_prob = 1 / home_odds
-    implied_away_prob = 1 / away_odds
+def calculate_match_probabilities(home_lambda, away_lambda, max_goals=6):
+    """Calculates exact scoreline matrix and converts to 1X2 and Over/Under probabilities."""
+    home_win = 0.0
+    draw = 0.0
+    away_win = 0.0
+    over_2_5 = 0.0
     
-    home_edge = home_prob - implied_home_prob
-    away_edge = away_prob - implied_away_prob
-    
-    recommendations = []
-    if home_edge > min_edge:
-        recommendations.append(f"🔥 VALUE BET ON HOME TEAM! Edge: {home_edge * 100:.2f}% (Odds: {home_odds})")
-    if away_edge > min_edge:
-        recommendations.append(f"🔥 VALUE BET ON AWAY TEAM! Edge: {away_edge * 100:.2f}% (Odds: {away_odds})")
-        
-    return recommendations
+    for h in range(max_goals + 1):
+        for a in range(max_goals + 1):
+            p = poisson_probability(home_lambda, h) * poisson_probability(away_lambda, a)
+            
+            if h > a:
+                home_win += p
+            elif h == a:
+                draw += p
+            else:
+                away_win += p
+                
+            if (h + a) > 2.5:
+                over_2_5 += p
+                
+    return {
+        "home_win": round(home_win, 4),
+        "draw": round(draw, 4),
+        "away_win": round(away_win, 4),
+        "over_2_5": round(over_2_5, 4)
+    }
