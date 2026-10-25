@@ -1,66 +1,76 @@
+import os
+import math
 import psycopg2
-from config import DATABASE_URL
-from model import calculate_win_probability, find_value_bets
+from dotenv import load_dotenv
+
+load_dotenv()
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+def calculate_kelly_stake(decimal_odds, true_probability, bankroll=10000, fraction=0.25):
+    """Calculates fractional Kelly criterion stake size."""
+    b = decimal_odds - 1.0
+    p = true_probability
+    q = 1.0 - p
+    
+    kelly_fraction = (b * p - q) / b
+    if kelly_fraction <= 0:
+        return 0.0
+        
+    recommended_stake = bankroll * kelly_fraction * fraction
+    return round(recommended_stake, 2)
 
 def evaluate_market_value():
-    """
-    Scans upcoming matches and current bookmaker odds in Neon,
-    runs the Elo model, and returns a list of high-value betting edges.
-    """
+    """Fetches matches from PostgreSQL, evaluates odds against model probabilities, and formats 1xBet signals."""
+    signals = []
+    
+    if not DATABASE_URL:
+        print("DATABASE_URL not found in environment variables.")
+        return signals
+
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
         
-        # Fetch upcoming matches along with bookmaker odds
+        # Query active matches from your Neon PostgreSQL database
         cur.execute("""
-            SELECT m.match_id, h.name as home_team, a.name as away_team, 
-                   h.elo_rating as home_elo, a.elo_rating as away_elo,
-                   o.home_odds, o.draw_odds, o.away_odds, o.bookmaker
-            FROM matches m
-            JOIN teams h ON m.home_team_id = h.team_id
-            JOIN teams a ON m.away_team_id = a.team_id
-            LEFT JOIN odds o ON m.match_id = o.match_id
-            WHERE m.status = 'UPCOMING';
+            SELECT home_team, away_team, league, market, selection, odds, model_probability 
+            FROM matches 
+            WHERE status = 'upcoming';
         """)
-        
         rows = cur.fetchall()
+        
+        for row in rows:
+            home, away, league, market, selection, odds, true_prob = row
+            
+            # Calculate Expected Value (EV)
+            ev = (true_prob * odds) - 1.0
+            
+            # Filter for value bets exceeding a 3% edge threshold
+            if ev > 0.03:
+                stake = calculate_kelly_stake(odds, true_prob)
+                edge_pct = round(ev * 100, 2)
+                
+                signal_card = (
+                    f"🎯 𝗢PTIMAL VALUE BET SIGNAL\n"
+                    f"──────────────────────────\n"
+                    f"⚽ 𝗠atch: {home} vs {away}\n"
+                    f"🏆 𝗟eague: {league}\n"
+                    f"📊 𝗠arket: {market}\n"
+                    f"📌 𝗦election: {selection}\n\n"
+                    f"💰 𝟭xBet Execution Parameters:\n"
+                    f"• Target Odds (1xBet): {odds}\n"
+                    f"• Model Probability: {round(true_prob * 100, 1)}%\n"
+                    f"• Expected Value (EV): +{edge_pct}%\n"
+                    f"• Suggested Stake: ${stake} (Quarter Kelly)\n"
+                    f"──────────────────────────\n"
+                    f"⚡ Action: Open 1xBet & Place Order"
+                )
+                signals.append(signal_card)
+                
         cur.close()
         conn.close()
         
-        alerts = []
-        for row in rows:
-            match_id, home_team, away_team, home_elo, away_elo, h_odds, d_odds, a_odds, bookie = row
-            
-            # Skip if odds haven't been logged for this match yet
-            if not h_odds or not a_odds:
-                continue
-                
-            # 1. Calculate model probabilities
-            home_prob, away_prob = calculate_win_probability(home_elo, away_elo)
-            
-            # 2. Check for value against bookmaker odds (e.g., 1xBet)
-            value_recs = find_value_bets(home_prob, away_prob, h_odds, a_odds, min_edge=0.02)
-            
-            if value_recs:
-                alert_msg = f"🎯 **Value Play Found ({bookie})!**\n🏀 {home_team} vs {away_team}\n"
-                for rec in value_recs:
-                    alert_msg += f"• {rec}\n"
-                alerts.append(alert_msg)
-                
-        return alerts
-
     except Exception as e:
-        print(f"Error evaluating market value: {e}")
-        return []
-
-if __name__ == "__main__":
-    results = evaluate_market_value()
-    if results:
-        for alert in results:
-            print(alert)
-    else:
-        print("No value bets found with current database odds.")
-
-
-
-    
+        print(f"Error connecting to database or evaluating market value: {e}")
+        
+    return signals
