@@ -27,6 +27,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
+async def background_value_scanner(context: ContextTypes.DEFAULT_TYPE):
+    """Automatically scans database and pushes value bet signals to the chat channel."""
+    if not CHAT_ID:
+        return
+        
+    signals = evaluate_market_value()
+    if signals:
+        for sig in signals:
+            keyboard = [
+                [
+                    InlineKeyboardButton("✅ Log Bet", callback_data=f"log_{sig['id']}"),
+                    InlineKeyboardButton("❌ Skip", callback_data=f"skip_{sig['id']}")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await context.bot.send_message(chat_id=CHAT_ID, text=sig["card"], reply_markup=reply_markup)
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text clicks from the bottom reply keyboard and dispatch interactive cards."""
     text = update.message.text
@@ -63,11 +80,11 @@ async def button_response_handler(update: Update, context: ContextTypes.DEFAULT_
     cur = conn.cursor()
     
     if action == "log":
-        cur.execute("UPDATE matches SET status = 'placed' WHERE id = %s;", (bet_id,))
+        cur.execute("UPDATE matches SET status = 'placed' WHERE match_id = %s;", (bet_id,))
         conn.commit()
         await query.edit_message_text(text=query.message.text + "\n\n✅ **Status:** Logged to Active Portfolio.", parse_mode="Markdown")
     elif action == "skip":
-        cur.execute("UPDATE matches SET status = 'skipped' WHERE id = %s;", (bet_id,))
+        cur.execute("UPDATE matches SET status = 'skipped' WHERE match_id = %s;", (bet_id,))
         conn.commit()
         await query.edit_message_text(text=query.message.text + "\n\n❌ **Status:** Skipped.", parse_mode="Markdown")
         
@@ -75,12 +92,17 @@ async def button_response_handler(update: Update, context: ContextTypes.DEFAULT_
     conn.close()
 
 def main():
-    print("Bot is starting polling...")
+    print("Bot is starting polling with automated background job queue...")
     application = Application.builder().token(TOKEN).build()
 
+    # Register handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button_response_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # Setup automated background job to check for value bets every 1800 seconds (30 minutes)
+    job_queue = application.job_queue
+    job_queue.run_repeating(background_value_scanner, interval=1800, first=10)
 
     application.run_polling()
 
