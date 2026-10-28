@@ -1,5 +1,4 @@
 import os
-import math
 import psycopg2
 from dotenv import load_dotenv
 
@@ -20,7 +19,7 @@ def calculate_kelly_stake(decimal_odds, true_probability, bankroll=10000, fracti
     return round(recommended_stake, 2)
 
 def evaluate_market_value():
-    """Fetches matches via JOINs from PostgreSQL, evaluates odds, and formats 1xBet signals."""
+    """Fetches matches via JOINs from PostgreSQL, evaluates odds, and formats signals."""
     signals = []
     
     if not DATABASE_URL:
@@ -31,7 +30,6 @@ def evaluate_market_value():
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
         
-        # Query matches joined with teams for home and away names
         cur.execute("""
             SELECT m.match_id, th.name AS home_team, ta.name AS away_team, 
                    m.league, m.market, m.selection, m.odds, m.model_probability 
@@ -47,7 +45,7 @@ def evaluate_market_value():
             
             ev = (float(true_prob) * float(odds)) - 1.0
             
-            if ev > 0.00:  # Set to 0.00 to force-trigger test signals
+            if ev > 0.00:  # Threshold for testing signals
                 stake = calculate_kelly_stake(float(odds), float(true_prob))
                 edge_pct = round(ev * 100, 2)
                 

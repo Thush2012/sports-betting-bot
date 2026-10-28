@@ -15,7 +15,7 @@ def ingest_comprehensive_data():
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
         
-        # 1. Ensure required tables and columns exist
+        # 1. Ensure required tables and columns exist with portfolio tracking
         cur.execute("""
             CREATE TABLE IF NOT EXISTS teams (
                 team_id SERIAL PRIMARY KEY,
@@ -36,11 +36,14 @@ def ingest_comprehensive_data():
                 selection VARCHAR(100),
                 odds NUMERIC(10,2),
                 model_probability NUMERIC(5,4),
-                status VARCHAR(20) DEFAULT 'upcoming'
+                status VARCHAR(20) DEFAULT 'upcoming',
+                result VARCHAR(20) DEFAULT 'pending',
+                profit_loss NUMERIC(10,2) DEFAULT 0.00,
+                stake NUMERIC(10,2) DEFAULT 0.00
             );
         """)
         
-        # 2. Insert Teams (Player/Club details)
+        # 2. Insert Teams
         teams_data = [
             ("Real Madrid", "Football", "Spain", 1850.0),
             ("Barcelona", "Football", "Spain", 1830.0),
