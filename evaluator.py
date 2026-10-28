@@ -43,6 +43,10 @@ def evaluate_market_value():
         for row in rows:
             match_id, home, away, league, market, selection, odds, true_prob = row
             
+            # Skip rows where odds or true_probability are NULL/None to prevent crash
+            if odds is None or true_prob is None:
+                continue
+            
             ev = (float(true_prob) * float(odds)) - 1.0
             
             if ev > 0.00:  # Threshold for testing signals
