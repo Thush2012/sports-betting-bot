@@ -5,6 +5,22 @@ from dotenv import load_dotenv
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+def get_sport_icon(sport_name):
+    """Returns the matching emoji icon based on the sport name."""
+    icons = {
+        "Football": "⚽",
+        "Soccer": "⚽",
+        "Basketball": "🏀",
+        "Tennis": "🎾",
+        "Cricket": "🏏",
+        "American Football": "🏈",
+        "Baseball": "⚾",
+        "Ice Hockey": "🏒",
+        "Rugby": "🏉"
+    }
+    # Default to 🎯 if sport is not found in the dictionary
+    return icons.get(sport_name, "🎯")
+
 def calculate_kelly_stake(decimal_odds, true_probability, bankroll=10000, fraction=0.25):
     """Calculates fractional Kelly criterion stake size."""
     b = decimal_odds - 1.0
@@ -19,7 +35,7 @@ def calculate_kelly_stake(decimal_odds, true_probability, bankroll=10000, fracti
     return round(recommended_stake, 2)
 
 def evaluate_market_value():
-    """Fetches unsent upcoming matches, evaluates odds, formats signals, and marks them as sent."""
+    """Fetches unsent upcoming matches, evaluates odds, formats signals with dynamic sport icons, and marks them as sent."""
     signals = []
     
     if not DATABASE_URL:
@@ -30,9 +46,9 @@ def evaluate_market_value():
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
         
-        # Only select upcoming matches where a signal has NOT been sent yet
+        # Include m.sport in the query to dynamically set icons
         cur.execute("""
-            SELECT m.match_id, th.name AS home_team, ta.name AS away_team, 
+            SELECT m.match_id, m.sport, th.name AS home_team, ta.name AS away_team, 
                    m.league, m.market, m.selection, m.odds, m.model_probability 
             FROM matches m
             JOIN teams th ON m.home_team_id = th.team_id
@@ -42,22 +58,22 @@ def evaluate_market_value():
         rows = cur.fetchall()
         
         for row in rows:
-            match_id, home, away, league, market, selection, odds, true_prob = row
+            match_id, sport, home, away, league, market, selection, odds, true_prob = row
             
-            # Skip rows where odds or true_probability are NULL/None to prevent crash
             if odds is None or true_prob is None:
                 continue
             
             ev = (float(true_prob) * float(odds)) - 1.0
             
-            if ev > 0.00:  # Threshold for testing signals
+            if ev > 0.00:  # Value threshold
                 stake = calculate_kelly_stake(float(odds), float(true_prob))
                 edge_pct = round(ev * 100, 2)
+                sport_icon = get_sport_icon(sport)
                 
                 signal_card = (
                     f"🎯 𝗢PTIMAL VALUE BET SIGNAL\n"
                     f"──────────────────────────\n"
-                    f"⚽ 𝗠atch: {home} vs {away}\n"
+                    f"{sport_icon} 𝗠atch: {home} vs {away}\n"
                     f"🏆 𝗟eague: {league}\n"
                     f"📊 𝗠arket: {market}\n"
                     f"📌 𝗦election: {selection}\n\n"
