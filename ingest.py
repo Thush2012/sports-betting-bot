@@ -39,7 +39,8 @@ def ingest_comprehensive_data():
                 status VARCHAR(20) DEFAULT 'upcoming',
                 result VARCHAR(20) DEFAULT 'pending',
                 profit_loss NUMERIC(10,2) DEFAULT 0.00,
-                stake NUMERIC(10,2) DEFAULT 0.00
+                stake NUMERIC(10,2) DEFAULT 0.00,
+                CONSTRAINT unique_fixture_selection UNIQUE (home_team_id, away_team_id, market, selection)
             );
         """)
 
@@ -81,10 +82,11 @@ def ingest_comprehensive_data():
             cur.execute("""
                 INSERT INTO matches (sport, match_date, home_team_id, away_team_id, league, market, selection, odds, model_probability, status, signal_sent)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
-                ON CONFLICT DO NOTHING;
+                ON CONFLICT (home_team_id, away_team_id, market, selection) 
+                DO UPDATE SET odds = EXCLUDED.odds, model_probability = EXCLUDED.model_probability;
             """, (sport, m_date, home_id, away_id, league, market, selection, odds, prob, status))
 
-        # 5. Insert Upcoming Value Matches
+        # 5. Insert Upcoming Value Matches with Upsert Conflict Handling
         upcoming_matches = [
             ("Basketball", datetime.now() + timedelta(hours=4), team_ids["Golden State Warriors"], team_ids["Phoenix Suns"], "NBA", "1X2", "Golden State Warriors Win", 2.15, 0.55, 'upcoming'),
             ("Football", datetime.now() + timedelta(hours=8), team_ids["Real Madrid"], team_ids["Manchester City"], "UEFA Champions League", "1X2", "Real Madrid Win", 2.50, 0.45, 'upcoming')
@@ -94,14 +96,15 @@ def ingest_comprehensive_data():
             cur.execute("""
                 INSERT INTO matches (sport, match_date, home_team_id, away_team_id, league, market, selection, odds, model_probability, status, signal_sent)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, FALSE)
-                ON CONFLICT DO NOTHING;
+                ON CONFLICT (home_team_id, away_team_id, market, selection) 
+                DO UPDATE SET odds = EXCLUDED.odds, model_probability = EXCLUDED.model_probability;
             """, (sport, m_date, home_id, away_id, league, market, selection, odds, prob, status))
 
         conn.commit()
         cur.close()
         conn.close()
         
-        print("Database schema successfully updated and data ingested!")
+        print("Database schema successfully updated with unique constraints and data ingested!")
         
     except Exception as e:
         print(f"Error during data ingestion: {e}")
