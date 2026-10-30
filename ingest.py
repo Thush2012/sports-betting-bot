@@ -15,7 +15,7 @@ def ingest_comprehensive_data():
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
         
-        # 1. Ensure required tables and columns exist with portfolio tracking
+        # 1. Ensure required tables and columns exist with portfolio tracking & signal control
         cur.execute("""
             CREATE TABLE IF NOT EXISTS teams (
                 team_id SERIAL PRIMARY KEY,
@@ -39,7 +39,8 @@ def ingest_comprehensive_data():
                 status VARCHAR(20) DEFAULT 'upcoming',
                 result VARCHAR(20) DEFAULT 'pending',
                 profit_loss NUMERIC(10,2) DEFAULT 0.00,
-                stake NUMERIC(10,2) DEFAULT 0.00
+                stake NUMERIC(10,2) DEFAULT 0.00,
+                signal_sent BOOLEAN DEFAULT FALSE
             );
         """)
         
@@ -72,8 +73,8 @@ def ingest_comprehensive_data():
         
         for sport, m_date, home_id, away_id, league, market, selection, odds, prob, status in past_matches:
             cur.execute("""
-                INSERT INTO matches (sport, match_date, home_team_id, away_team_id, league, market, selection, odds, model_probability, status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                INSERT INTO matches (sport, match_date, home_team_id, away_team_id, league, market, selection, odds, model_probability, status, signal_sent)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE);
             """, (sport, m_date, home_id, away_id, league, market, selection, odds, prob, status))
 
         # 4. Insert Upcoming Value Matches
@@ -84,8 +85,8 @@ def ingest_comprehensive_data():
         
         for sport, m_date, home_id, away_id, league, market, selection, odds, prob, status in upcoming_matches:
             cur.execute("""
-                INSERT INTO matches (sport, match_date, home_team_id, away_team_id, league, market, selection, odds, model_probability, status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                INSERT INTO matches (sport, match_date, home_team_id, away_team_id, league, market, selection, odds, model_probability, status, signal_sent)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, FALSE);
             """, (sport, m_date, home_id, away_id, league, market, selection, odds, prob, status))
 
         conn.commit()

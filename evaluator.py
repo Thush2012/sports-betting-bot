@@ -19,7 +19,7 @@ def calculate_kelly_stake(decimal_odds, true_probability, bankroll=10000, fracti
     return round(recommended_stake, 2)
 
 def evaluate_market_value():
-    """Fetches matches via JOINs from PostgreSQL, evaluates odds, and formats signals."""
+    """Fetches unsent upcoming matches, evaluates odds, formats signals, and marks them as sent."""
     signals = []
     
     if not DATABASE_URL:
@@ -30,13 +30,14 @@ def evaluate_market_value():
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
         
+        # Only select upcoming matches where a signal has NOT been sent yet
         cur.execute("""
             SELECT m.match_id, th.name AS home_team, ta.name AS away_team, 
                    m.league, m.market, m.selection, m.odds, m.model_probability 
             FROM matches m
             JOIN teams th ON m.home_team_id = th.team_id
             JOIN teams ta ON m.away_team_id = ta.team_id
-            WHERE LOWER(m.status) = 'upcoming';
+            WHERE LOWER(m.status) = 'upcoming' AND (m.signal_sent IS FALSE OR m.signal_sent IS NULL);
         """)
         rows = cur.fetchall()
         
@@ -72,6 +73,12 @@ def evaluate_market_value():
                     "id": match_id,
                     "card": signal_card
                 })
+                
+                # Mark this match as signal_sent = TRUE so it never sends again
+                cur.execute("""
+                    UPDATE matches SET signal_sent = TRUE WHERE match_id = %s;
+                """, (match_id,))
+                conn.commit()
                 
         cur.close()
         conn.close()
