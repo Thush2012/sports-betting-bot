@@ -15,7 +15,7 @@ def ingest_comprehensive_data():
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
         
-        # 1. Ensure required tables and columns exist with portfolio tracking, signal control & CLV
+        # 1. Ensure required tables exist
         cur.execute("""
             CREATE TABLE IF NOT EXISTS teams (
                 team_id SERIAL PRIMARY KEY,
@@ -39,14 +39,18 @@ def ingest_comprehensive_data():
                 status VARCHAR(20) DEFAULT 'upcoming',
                 result VARCHAR(20) DEFAULT 'pending',
                 profit_loss NUMERIC(10,2) DEFAULT 0.00,
-                stake NUMERIC(10,2) DEFAULT 0.00,
-                signal_sent BOOLEAN DEFAULT FALSE,
-                closing_odds NUMERIC(10,2) DEFAULT NULL,
-                clv_edge NUMERIC(5,4) DEFAULT NULL
+                stake NUMERIC(10,2) DEFAULT 0.00
             );
         """)
+
+        # 2. Safely add missing columns to existing tables if they don't exist yet
+        cur.execute("""
+            ALTER TABLE matches ADD COLUMN IF NOT EXISTS signal_sent BOOLEAN DEFAULT FALSE;
+            ALTER TABLE matches ADD COLUMN IF NOT EXISTS closing_odds NUMERIC(10,2) DEFAULT NULL;
+            ALTER TABLE matches ADD COLUMN IF NOT EXISTS clv_edge NUMERIC(5,4) DEFAULT NULL;
+        """)
         
-        # 2. Insert Teams
+        # 3. Insert Teams
         teams_data = [
             ("Real Madrid", "Football", "Spain", 1850.0),
             ("Barcelona", "Football", "Spain", 1830.0),
@@ -67,7 +71,7 @@ def ingest_comprehensive_data():
             row = cur.fetchone()
             team_ids[row[1]] = row[0]
 
-        # 3. Insert Historical / Previous Matches
+        # 4. Insert Historical / Previous Matches
         past_matches = [
             ("Football", datetime.now() - timedelta(days=3), team_ids["Real Madrid"], team_ids["Barcelona"], "La Liga", "1X2", "Real Madrid Win", 2.10, 0.52, 'completed'),
             ("Football", datetime.now() - timedelta(days=5), team_ids["Manchester City"], team_ids["Arsenal"], "Premier League", "1X2", "Draw", 3.40, 0.31, 'completed')
@@ -76,10 +80,11 @@ def ingest_comprehensive_data():
         for sport, m_date, home_id, away_id, league, market, selection, odds, prob, status in past_matches:
             cur.execute("""
                 INSERT INTO matches (sport, match_date, home_team_id, away_team_id, league, market, selection, odds, model_probability, status, signal_sent)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE);
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
+                ON CONFLICT DO NOTHING;
             """, (sport, m_date, home_id, away_id, league, market, selection, odds, prob, status))
 
-        # 4. Insert Upcoming Value Matches
+        # 5. Insert Upcoming Value Matches
         upcoming_matches = [
             ("Basketball", datetime.now() + timedelta(hours=4), team_ids["Golden State Warriors"], team_ids["Phoenix Suns"], "NBA", "1X2", "Golden State Warriors Win", 2.15, 0.55, 'upcoming'),
             ("Football", datetime.now() + timedelta(hours=8), team_ids["Real Madrid"], team_ids["Manchester City"], "UEFA Champions League", "1X2", "Real Madrid Win", 2.50, 0.45, 'upcoming')
@@ -88,14 +93,15 @@ def ingest_comprehensive_data():
         for sport, m_date, home_id, away_id, league, market, selection, odds, prob, status in upcoming_matches:
             cur.execute("""
                 INSERT INTO matches (sport, match_date, home_team_id, away_team_id, league, market, selection, odds, model_probability, status, signal_sent)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, FALSE);
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, FALSE)
+                ON CONFLICT DO NOTHING;
             """, (sport, m_date, home_id, away_id, league, market, selection, odds, prob, status))
 
         conn.commit()
         cur.close()
         conn.close()
         
-        print("Comprehensive database ingestion completed successfully!")
+        print("Database schema successfully updated and data ingested!")
         
     except Exception as e:
         print(f"Error during data ingestion: {e}")
