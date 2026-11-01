@@ -39,16 +39,18 @@ def ingest_comprehensive_data():
                 status VARCHAR(20) DEFAULT 'upcoming',
                 result VARCHAR(20) DEFAULT 'pending',
                 profit_loss NUMERIC(10,2) DEFAULT 0.00,
-                stake NUMERIC(10,2) DEFAULT 0.00,
-                CONSTRAINT unique_fixture_selection UNIQUE (home_team_id, away_team_id, market, selection)
+                stake NUMERIC(10,2) DEFAULT 0.00
             );
         """)
 
-        # 2. Safely add missing columns to existing tables if they don't exist yet
+        # 2. Safely add missing columns and unique index for conflict handling
         cur.execute("""
             ALTER TABLE matches ADD COLUMN IF NOT EXISTS signal_sent BOOLEAN DEFAULT FALSE;
             ALTER TABLE matches ADD COLUMN IF NOT EXISTS closing_odds NUMERIC(10,2) DEFAULT NULL;
             ALTER TABLE matches ADD COLUMN IF NOT EXISTS clv_edge NUMERIC(5,4) DEFAULT NULL;
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_fixture 
+            ON matches (home_team_id, away_team_id, market, selection);
         """)
         
         # 3. Insert Teams
@@ -86,7 +88,7 @@ def ingest_comprehensive_data():
                 DO UPDATE SET odds = EXCLUDED.odds, model_probability = EXCLUDED.model_probability;
             """, (sport, m_date, home_id, away_id, league, market, selection, odds, prob, status))
 
-        # 5. Insert Upcoming Value Matches with Upsert Conflict Handling
+        # 5. Insert Upcoming Value Matches
         upcoming_matches = [
             ("Basketball", datetime.now() + timedelta(hours=4), team_ids["Golden State Warriors"], team_ids["Phoenix Suns"], "NBA", "1X2", "Golden State Warriors Win", 2.15, 0.55, 'upcoming'),
             ("Football", datetime.now() + timedelta(hours=8), team_ids["Real Madrid"], team_ids["Manchester City"], "UEFA Champions League", "1X2", "Real Madrid Win", 2.50, 0.45, 'upcoming')
@@ -104,7 +106,7 @@ def ingest_comprehensive_data():
         cur.close()
         conn.close()
         
-        print("Database schema successfully updated with unique constraints and data ingested!")
+        print("Database schema successfully updated with unique index and data ingested!")
         
     except Exception as e:
         print(f"Error during data ingestion: {e}")
