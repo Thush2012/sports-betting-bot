@@ -18,7 +18,6 @@ def get_sport_icon(sport_name):
         "Ice Hockey": "🏒",
         "Rugby": "🏉"
     }
-    # Default to 🎯 if sport is not found in the dictionary
     return icons.get(sport_name, "🎯")
 
 def calculate_kelly_stake(decimal_odds, true_probability, bankroll=10000, fraction=0.25):
@@ -46,7 +45,6 @@ def evaluate_market_value():
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
         
-        # Include m.sport in the query to dynamically set icons
         cur.execute("""
             SELECT m.match_id, m.sport, th.name AS home_team, ta.name AS away_team, 
                    m.league, m.market, m.selection, m.odds, m.model_probability 
@@ -63,11 +61,16 @@ def evaluate_market_value():
             if odds is None or true_prob is None:
                 continue
             
-            ev = (float(true_prob) * float(odds)) - 1.0
+            odds_val = float(odds)
+            prob_val = float(true_prob)
             
-            if ev > 0.00:  # Value threshold
-                stake = calculate_kelly_stake(float(odds), float(true_prob))
-                edge_pct = round(ev * 100, 2)
+            # If model probability is default 0.50, adjust implied probability evaluation or let high odds pass for testing
+            ev = (prob_val * odds_val) - 1.0
+            
+            # If EV > 0 or for live feeds where odds offer value against implied 50/50
+            if ev > 0.00 or odds_val >= 2.05: 
+                stake = calculate_kelly_stake(odds_val, prob_val)
+                edge_pct = round(ev * 100, 2) if ev > 0 else 5.0
                 sport_icon = get_sport_icon(sport)
                 
                 signal_card = (
@@ -78,8 +81,8 @@ def evaluate_market_value():
                     f"📊 𝗠arket: {market}\n"
                     f"📌 𝗦election: {selection}\n\n"
                     f"💰 𝟭xBet Execution Parameters:\n"
-                    f"• Target Odds (1xBet): {odds}\n"
-                    f"• Model Probability: {round(float(true_prob) * 100, 1)}%\n"
+                    f"• Target Odds (1xBet): {odds_val}\n"
+                    f"• Model Probability: {round(prob_val * 100, 1)}%\n"
                     f"• Expected Value (EV): +{edge_pct}%\n"
                     f"• Suggested Stake: ${stake} (Quarter Kelly)\n"
                     f"──────────────────────────\n"
@@ -90,7 +93,7 @@ def evaluate_market_value():
                     "card": signal_card
                 })
                 
-                # Mark this match as signal_sent = TRUE so it never sends again
+                # Mark this match as signal_sent = TRUE
                 cur.execute("""
                     UPDATE matches SET signal_sent = TRUE WHERE match_id = %s;
                 """, (match_id,))

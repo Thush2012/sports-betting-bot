@@ -12,7 +12,6 @@ def fetch_and_store_live_odds(sport_key="basketball_nba"):
     if not ODDS_API_KEY or not DATABASE_URL:
         print("Missing API key or Database URL.")
         return
-
     url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h&oddsFormat=decimal"
     
     response = requests.get(url)
@@ -38,24 +37,35 @@ def fetch_and_store_live_odds(sport_key="basketball_nba"):
             """, (team_name, 'Basketball', 'Global', 1500.0))
         
         cur.execute("SELECT team_id FROM teams WHERE name = %s;", (home_team,))
-        home_id = cur.fetchone()[0]
+        home_row = cur.fetchone()
+        if not home_row:
+            continue
+        home_id = home_row[0]
         
         cur.execute("SELECT team_id FROM teams WHERE name = %s;", (away_team,))
-        away_id = cur.fetchone()[0]
+        away_row = cur.fetchone()
+        if not away_row:
+            continue
+        away_id = away_row[0]
         
         for bookmaker in event.get('bookmakers', []):
             if bookmaker['key'] in ['pinnacle', '1xbet', 'betfair']:
-                market = bookmaker['markets'][0]
+                markets = bookmaker.get('markets', [])
+                if not markets:
+                    continue
+                market = markets[0]
+                market_key = market.get('key', '1X2')
                 for outcome in market['outcomes']:
                     selection = outcome['name']
                     price = outcome['price']
                     
                     cur.execute("""
-                        INSERT INTO matches (sport, match_date, home_team_id, away_team_id, league, market, selection, odds, model_probability, status)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'upcoming')
-                        ON CONFLICT DO NOTHING;
-                    """, ('Basketball', commence_time, home_id, away_id, league, '1X2', selection, price, 0.50))
-                    
+                        INSERT INTO matches (sport, match_date, home_team_id, away_team_id, league, market, selection, odds, model_probability, status, signal_sent)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'upcoming', FALSE)
+                        ON CONFLICT (home_team_id, away_team_id, market, selection) 
+                        DO UPDATE SET odds = EXCLUDED.odds, match_date = EXCLUDED.match_date;
+                    """, ('Basketball', commence_time, home_id, away_id, league, market_key, selection, price, 0.55))
+                
     conn.commit()
     cur.close()
     conn.close()

@@ -17,7 +17,8 @@ logger = logging.getLogger(__name__)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send welcome message and setup bottom reply keyboard."""
     keyboard = [
-        [KeyboardButton("🎯 Check Value Bets"), KeyboardButton("⚙️ System Status")]
+        [KeyboardButton("🎯 Check Value Bets"), KeyboardButton("📈 Portfolio Stats")],
+        [KeyboardButton("⚙️ System Status")]
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
@@ -31,7 +32,6 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Calculates and displays live syndicate portfolio performance."""
     if not DATABASE_URL:
         return
-
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
@@ -112,6 +112,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("No value bets found with current database odds.")
             
+    elif text == "📈 Portfolio Stats":
+        await stats_command(update, context)
+        
     elif text == "⚙️ System Status":
         await update.message.reply_text("✅ **System Status:** Online & 24/7 background scanning active on Oracle Cloud.", parse_mode="Markdown")
 
@@ -132,7 +135,7 @@ async def button_response_handler(update: Update, context: ContextTypes.DEFAULT_
         if row:
             odds, prob = float(row[0]), float(row[1])
             b = odds - 1.0
-            kelly = (b * prob - (1.0 - prob)) / b  # Changed 'p' to 'prob'
+            kelly = (b * prob - (1.0 - prob)) / b 
             stake = round(10000 * max(0, kelly) * 0.25, 2)
             
             cur.execute("""
@@ -154,17 +157,17 @@ async def button_response_handler(update: Update, context: ContextTypes.DEFAULT_
 def main():
     print("Bot is starting polling with automated background job queue...")
     application = Application.builder().token(TOKEN).build()
-
+    
     # Register handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("stats", stats_command))
     application.add_handler(CallbackQueryHandler(button_response_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
+    
     # Setup automated background job to check for value bets every 1800 seconds (30 minutes)
     job_queue = application.job_queue
     job_queue.run_repeating(background_value_scanner, interval=1800, first=10)
-
+    
     application.run_polling()
 
 if __name__ == "__main__":
