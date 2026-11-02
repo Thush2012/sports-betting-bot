@@ -29,7 +29,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Calculates and displays live syndicate portfolio performance."""
+    """Calculates and displays live syndicate portfolio performance safely."""
     if not DATABASE_URL:
         return
     try:
@@ -45,12 +45,14 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             FROM matches 
             WHERE status = 'placed';
         """)
-        total_bets, total_staked, total_pl, wins, losses = cur.fetchone()
+        row = cur.fetchone()
         
-        total_staked = float(total_staked or 0)
-        total_pl = float(total_pl or 0)
-        wins = int(wins or 0)
-        losses = int(losses or 0)
+        # Safely handle empty results or None values to prevent null-type crashes
+        total_bets = int(row[0] or 0)
+        total_staked = float(row[1] or 0.0)
+        total_pl = float(row[2] or 0.0)
+        wins = int(row[3] or 0)
+        losses = int(row[4] or 0)
         
         roi = (total_pl / total_staked * 100) if total_staked > 0 else 0.0
         win_rate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0.0
@@ -58,7 +60,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         stats_card = (
             f"📈 **SYNDICATE PORTFOLIO PERFORMANCE**\n"
             f"──────────────────────────\n"
-            f"🔢 Total Bets Placed: {total_bets or 0}\n"
+            f"🔢 Total Bets Placed: {total_bets}\n"
             f"💰 Total Staked: ${total_staked:.2f}\n"
             f"🎯 Record (W-L): {wins}-{losses} ({win_rate:.1f}%)\n"
             f"💵 Net Profit/Loss: ${total_pl:+.2f}\n"
@@ -68,11 +70,16 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         cur.close()
         conn.close()
-        await update.message.reply_text(stats_card, parse_mode="Markdown")
+        
+        if update.message:
+            await update.message.reply_text(stats_card, parse_mode="Markdown")
+        elif update.callback_query:
+            await update.callback_query.message.reply_text(stats_card, parse_mode="Markdown")
         
     except Exception as e:
         logger.error(f"Error fetching stats: {e}")
-        await update.message.reply_text("Error calculating portfolio statistics.")
+        if update.message:
+            await update.message.reply_text("Error calculating portfolio statistics.")
 
 async def background_value_scanner(context: ContextTypes.DEFAULT_TYPE):
     """Automatically scans database and pushes value bet signals to the chat channel."""
