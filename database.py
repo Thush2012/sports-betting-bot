@@ -6,7 +6,7 @@ def get_db_connection():
     return psycopg2.connect(DATABASE_URL)
 
 def get_active_matches():
-    """Fetches upcoming matches from the database."""
+    """Fetches upcoming matches from the database safely with lowercase status check."""
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -14,7 +14,7 @@ def get_active_matches():
         FROM matches m
         JOIN teams h ON m.home_team_id = h.team_id
         JOIN teams a ON m.away_team_id = a.team_id
-        WHERE m.status = 'UPCOMING';
+        WHERE LOWER(m.status) = 'upcoming';
     """)
     rows = cur.fetchall()
     cur.close()
