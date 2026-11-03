@@ -6,7 +6,7 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_sport_icon(sport_name):
-    """Returns the matching emoji icon based on the sport name."""
+    """Returns the matching emoji icon based on the sport or racing category."""
     icons = {
         "Football": "⚽",
         "Soccer": "⚽",
@@ -16,7 +16,12 @@ def get_sport_icon(sport_name):
         "American Football": "🏈",
         "Baseball": "⚾",
         "Ice Hockey": "🏒",
-        "Rugby": "🏉"
+        "Rugby": "🏉",
+        "Motorsports": "🏎️",
+        "Formula 1": "🏎️",
+        "Esports": "🎮",
+        "Boxing": "🥊",
+        "MMA": "🥋"
     }
     return icons.get(sport_name, "🎯")
 
